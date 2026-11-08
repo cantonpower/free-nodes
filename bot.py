@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
 free-node-bot v4
-15 subs -> 4 output:
-  sub_a.yaml  — http+socks5 (Clash)
-  sub_b.yaml  — ss/vmess/vless/trojan/hy2 (Clash)
-  sub_a.txt   — http+socks5 (裸URL)
-  sub_b.txt   — ss/vmess/vless/trojan/hy2 (裸URL)
+15 subs -> 4 output files:
+  sub_a.yaml   — http+socks5 (Clash)
+  sub_b.yaml   — ss/vmess/vless/trojan/hy2 (Clash)
+  sub_a.txt    — http+socks5 (裸 URL)
+  sub_b.txt    — ss/vmess/vless/trojan/hy2 (裸 URL)
 """
 import yaml, socket, json, base64, re, time
 import urllib.request, urllib.error, urllib.parse
@@ -36,11 +36,13 @@ def fetch(url):
         with urllib.request.urlopen(req, timeout=20) as r:
             return r.read()
     except urllib.error.HTTPError as e:
-        if e.code == 404: return b""
+        if e.code == 404:
+            return b""
         raise
 
 def parse_yaml(raw):
-    if raw[:3] == b"\xef\xbb\xbf": raw = raw[3:]
+    if raw[:3] == b"\xef\xbb\xbf":
+        raw = raw[3:]
     d = yaml.safe_load(raw.decode("utf-8", errors="ignore"))
     return d.get("proxies", [])
 
@@ -52,26 +54,44 @@ def parse_b64(raw):
     out = []
     for line in txt.replace("\r", "").split("\n"):
         line = line.strip()
-        if not line.startswith(("ss://", "vmess://", "vless://", "trojan://")): continue
+        if not line.startswith(("ss://", "vmess://", "vless://", "trojan://")):
+            continue
         t = line.split(":")[0]
         rest = line[len(t) + 1:]
         try:
             if t == "ss":
                 m = re.match(r"^([^@]+)@([\w.-]+):(\d+)", rest)
-                if not m: continue
-                out.append({"type": "ss", "name": line, "server": m.group(2),
-                            "port": int(m.group(3)), "password": urllib.parse.unquote(m.group(1))})
+                if not m:
+                    continue
+                out.append({
+                    "type": "ss",
+                    "name": line,
+                    "server": m.group(2),
+                    "port": int(m.group(3)),
+                    "password": urllib.parse.unquote(m.group(1)),
+                })
             elif t == "vmess":
                 j = json.loads(base64.urlsafe_b64decode(
                     rest + "=" * (-len(rest) % 4)).decode("utf-8", errors="ignore"))
-                out.append({"type": "vmess", "name": j.get("ps", line),
-                            "server": j["add"], "port": int(j["port"]),
-                            "uuid": j["id"], "aid": j.get("aid", 0)})
+                out.append({
+                    "type": "vmess",
+                    "name": j.get("ps", line),
+                    "server": j["add"],
+                    "port": int(j["port"]),
+                    "uuid": j["id"],
+                    "aid": j.get("aid", 0),
+                })
             elif t in ("vless", "trojan"):
                 m = re.match(r"^([^@]+)@([\w.-]+):(\d+)", rest)
-                if not m: continue
-                out.append({"type": t, "name": line, "server": m.group(2),
-                            "port": int(m.group(3)), "uuid": m.group(1)})
+                if not m:
+                    continue
+                out.append({
+                    "type": t,
+                    "name": line,
+                    "server": m.group(2),
+                    "port": int(m.group(3)),
+                    "uuid": m.group(1),
+                })
         except Exception:
             pass
     return out
@@ -146,13 +166,15 @@ def speed(p):
             s.recv(2)
             s.sendall(bytes([5, 1]) + bytes([0]) * 10)
             r = s.recv(10)
-            if r[1] != 0: return -1
+            if r[1] != 0:
+                return -1
         t0 = time.time()
         s.sendall(b"GET /generate_100k HTTP/1.0\r\nHost: cp.cloudflare.com\r\n\r\n")
         buf = b""
         while len(buf) < 102400:
             chunk = s.recv(16384)
-            if not chunk: break
+            if not chunk:
+                break
             buf += chunk
         s.close()
         return int((time.time() - t0) * 1000)
@@ -171,11 +193,13 @@ def to_url(p):
         j = {"v": 2, "ps": str(p.get("name", ""))[:200], "add": srv,
               "port": port, "id": uid, "aid": p.get("aid", 0),
               "scy": "auto", "net": "tcp", "type": "tcp"}
-        return "vmless://" + base64.urlsafe_b64encode(json.dumps(j).encode()).decode()
+        return "vmless://" + base64.urlsafe_b64encode(json.dumps(j).encode()).decode().rstrip("=")
     if t == "vless":
         q = []
-        if p.get("fingerprint"): q.append("fp=" + str(p["fingerprint"]))
-        if p.get("tls"): q.append("security=tls")
+        if p.get("fingerprint"):
+            q.append("fp=" + str(p["fingerprint"]))
+        if p.get("tls"):
+            q.append("security=tls")
         q.append("encryption=" + str(p.get("encryption", "none")))
         return "vless://%s@%s:%d?%s" % (uid, srv, port, "&".join(q))
     if t == "trojan":
@@ -191,41 +215,82 @@ def to_url(p):
 def to_clash(p):
     t = p.get("type", "")
     name = str(p.get("name", str(p.get("server", "?"))))[:60]
-    entry = {"name": name, "server": p["server"], "port": int(p["port"])}
+    entry = {
+        "name": name,
+        "server": p["server"],
+        "port": int(p["port"]),
+    }
     if t == "ss":
-        entry.update(type="ss", cipher="aes-256-gcm", password=p.get("password", ""))
+        entry.update({
+            "type": "ss",
+            "cipher": "aes-256-gcm",
+            "password": p.get("password", ""),
+        })
     elif t == "vmess":
-        entry.update(type="vmess", uuid=p.get("uuid", ""), alterId=p.get("aid", 0), security="auto")
+        entry.update({
+            "type": "vmess",
+            "uuid": p.get("uuid", ""),
+            "alterId": p.get("aid", 0),
+            "security": "auto",
+        })
     elif t == "vless":
-        entry.update(type="vless", uuid=p.get("uuid", ""),
-                     security="tls" if p.get("tls") else "none",
-                     encryption=p.get("encryption", "none"))
-        if p.get("fingerprint"): entry["fingerprint"] = p["fingerprint"]
+        entry.update({
+            "type": "vless",
+            "uuid": p.get("uuid", ""),
+            "security": "tls" if p.get("tls") else "none",
+            "encryption": p.get("encryption", "none"),
+        })
+        if p.get("fingerprint"):
+            entry["fingerprint"] = p["fingerprint"]
     elif t == "trojan":
-        entry.update(type="trojan", password=p.get("uuid", ""))
+        entry.update({
+            "type": "trojan",
+            "password": p.get("uuid", ""),
+        })
     elif t in ("hysteria", "hysteria2", "ssr"):
-        entry.update(type=t, password=p.get("password", ""))
+        entry.update({
+            "type": t,
+            "password": p.get("password", ""),
+        })
     elif t == "http":
-        entry.update(type="http", username="", password=p.get("password", ""))
+        entry.update({
+            "type": "http",
+            "username": "",
+            "password": p.get("password", ""),
+        })
     elif t == "socks5":
-        entry.update(type="socks", username="", password=p.get("password", ""))
+        entry.update({
+            "type": "socks",
+            "username": "",
+            "password": p.get("password", ""),
+        })
     else:
         return None
     return entry
 
-def make_clash_yaml(ps):
+def make_clash_yaml(ps, label):
     proxies = []
     for p in ps:
         e = to_clash(p)
-        if e: proxies.append(e)
+        if e:
+            proxies.append(e)
     names = [p["name"] for p in proxies]
     return {
         "proxies": proxies,
         "proxy-groups": [
-            {"name": "auto", "type": "url-test", "servers": names,
-             "url": "http://cp.cloudflare.com/generate_100k",
-             "interval": 300, "tolerance": 50},
-            {"name": "manual", "type": "select", "servers": ["auto"] + names},
+            {
+                "name": "auto",
+                "type": "url-test",
+                "servers": names,
+                "url": "http://cp.cloudflare.com/generate_100k",
+                "interval": 300,
+                "tolerance": 50,
+            },
+            {
+                "name": "manual",
+                "type": "select",
+                "servers": ["auto"] + names,
+            },
         ],
         "rules": [
             {"type": "ip-cidr", "payload": "127.0.0.0/8", "proxy": "DIRECT"},
@@ -273,16 +338,19 @@ def make_clash_yaml(ps):
     }
 
 def main():
+    # fetch 15 subs
     all_ps = []
     for url in SUBS:
         raw = fetch(url)
-        if not raw: continue
+        if not raw:
+            continue
         if raw[0:3] == b"\xef\xbb\xbf" or b"---" in raw[:200] or b": " in raw[:100]:
             ps = parse_yaml(raw)
         else:
             ps = parse_b64(raw)
         all_ps.extend(ps)
 
+    # dedup
     seen, uniq = set(), []
     for p in all_ps:
         k = (str(p.get("server", "")), str(p.get("port", "")))
@@ -290,38 +358,46 @@ def main():
             seen.add(k)
             uniq.append(p)
 
+    # handshake
     with ThreadPoolExecutor(max_workers=30) as ex:
         res = list(ex.map(handshake, uniq))
     alive = [p for p, r in zip(uniq, res) if r == "ALIVE"]
 
+    # speed
     with ThreadPoolExecutor(max_workers=20) as ex:
         delays = list(ex.map(speed, alive))
 
+    # split
     A = [p for p in alive if p.get("type") in ("http", "socks5")]
     B = [p for p in alive if p.get("type") not in ("http", "socks5")]
+
+    # dump
+    def dump_txt(fn, ps, label):
+        dm = {id(p): d for p, d in zip(alive, delays)}
+        with open(fn, "w") as f:
+            f.write("# %s\n# %s\n# %d/%d alive\n\n" % (label, time.strftime("%Y-%m-%d %H:%M"), len(ps), len(uniq)))
+            for p in ps:
+                ms = dm.get(id(p), -1)
+                u = to_url(p)
+                if u:
+                    f.write(u + "\n")
+
+    def dump_clash(fn, ps, label):
+        data = make_clash_yaml(ps, label)
+        with open(fn, "w") as f:
+            yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
 
     idsA = {id(p) for p in A}
     idsB = {id(p) for p in B}
     delA = [d for p, d in zip(alive, delays) if id(p) in idsA]
     delB = [d for p, d in zip(alive, delays) if id(p) in idsB]
 
-    def dump_txt(fn, ps, dlist, label):
-        with open(fn, "w") as f:
-            f.write("# %s\n# %s\n# %d/%d alive\n\n" % (label, time.strftime("%Y-%m-%d %H:%M"), len(ps), len(uniq)))
-            for p, ms in zip(ps, dlist):
-                u = to_url(p)
-                if u: f.write(u + "\n")
+    dump_txt("sub_a.txt", A, "A: http+socks5")
+    dump_txt("sub_b.txt", B, "B: ss/vmess/vless/trojan/hy2")
+    dump_clash("sub_a.yaml", A, "A")
+    dump_clash("sub_b.yaml", B, "B")
 
-    def dump_clash(fn, ps):
-        data = make_clash_yaml(ps)
-        with open(fn, "w") as f:
-            yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
-
-    dump_txt("sub_a.txt", A, delA, "A: http+socks5")
-    dump_txt("sub_b.txt", B, delB, "B: ss/vmess/vless/trojan/hy2")
-    dump_clash("sub_a.yaml", A)
-    dump_clash("sub_b.yaml", B)
-
+    # summary
     ca = Counter(p.get("type", "") for p in A)
     cb = Counter(p.get("type", "") for p in B)
     with open("summary.txt", "w") as f:
@@ -333,16 +409,18 @@ def main():
             f.write("%s %s  [%s]  %s:%s  %s\n" % (
                 mark, str(p.get("name", "?"))[:50],
                 p.get("type", ""),
-                p.get("server", ""), p.get("port", ""), ms_s))
+                p.get("server", ""), port, ms_s))
 
     print("15 subs")
     print("  fetched: %d" % len(all_ps))
     print("  dedup:   %d" % len(uniq))
     print("  ALIVE:   %d" % len(alive))
     print("\n  A: %d" % len(A))
-    for t, c in ca.most_common(): print("    %s: %d" % (t, c))
+    for t, c in ca.most_common():
+        print("    %s: %d" % (t, c))
     print("\n  B: %d" % len(B))
-    for t, c in cb.most_common(): print("    %s: %d" % (t, c))
+    for t, c in cb.most_common():
+        print("    %s: %d" % (t, c))
 
 if __name__ == "__main__":
     main()
