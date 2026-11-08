@@ -323,7 +323,7 @@ def main():
     dump_clash("sub_b.yaml", B)
 
     ca = Counter(p.get("type", "") for p in A)
-    cb = Counter(p.get("type", "") for pod B)
+    cb = Counter(p.get("type", "") for p in B)
     with open("summary.txt", "w") as f:
         f.write("# free-node-bot v4\n# %s\n" % time.strftime("%Y-%m-%d %H:%M"))
         f.write("# fetched: %d  dedup: %d  alive: %d\n\n" % (len(all_ps), len(uniq), len(alive)))
