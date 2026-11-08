@@ -17,6 +17,6 @@ jobs:
       - run: |
           git config user.name "free-node-bot"
           git config user.email "bot@freenodes"
-          git add sub_a.txt sub_b.txt summary.txt
+          git add sub_a.txt sub_b.txt sub_a.yaml sub_b.yaml summary.txt
           git commit -m "$(date +%F)" || exit 0
           git push
