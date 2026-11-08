@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-free-node-bot v3
+free-node-bot v4
 15 subs -> 4 output:
   sub_a.yaml  — http+socks5 (Clash)
   sub_b.yaml  — ss/vmess/vless/trojan/hy2 (Clash)
@@ -300,10 +300,15 @@ def main():
     A = [p for p in alive if p.get("type") in ("http", "socks5")]
     B = [p for p in alive if p.get("type") not in ("http", "socks5")]
 
-    def dump_txt(fn, ps, label):
+    idsA = {id(p) for p in A}
+    idsB = {id(p) for p in B}
+    delA = [d for p, d in zip(alive, delays) if id(p) in idsA]
+    delB = [d for p, d in zip(alive, delays) if id(p) in idsB]
+
+    def dump_txt(fn, ps, dlist, label):
         with open(fn, "w") as f:
             f.write("# %s\n# %s\n# %d/%d alive\n\n" % (label, time.strftime("%Y-%m-%d %H:%M"), len(ps), len(uniq)))
-            for p, ms in zip(ps, [d for a, d in zip(alive, delays) if id(a) == id(p)]):
+            for p, ms in zip(ps, dlist):
                 u = to_url(p)
                 if u: f.write(u + "\n")
 
@@ -312,20 +317,15 @@ def main():
         with open(fn, "w") as f:
             yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
 
-    idsA = {id(p) for p in A}
-    idsB = {id(p) for p in B}
-    delA = [d for p, d in zip(alive, delays) if id(p) in idsA]
-    delB = [d for p, d in zip(alive, delays) if id(p) in idsB]
-
-    dump_txt("sub_a.txt", A, "A: http+socks5")
-    dump_txt("sub_b.txt", B, "B: ss/vmess/vless/trojan/hy2")
+    dump_txt("sub_a.txt", A, delA, "A: http+socks5")
+    dump_txt("sub_b.txt", B, delB, "B: ss/vmess/vless/trojan/hy2")
     dump_clash("sub_a.yaml", A)
     dump_clash("sub_b.yaml", B)
 
     ca = Counter(p.get("type", "") for p in A)
-    cb = Counter(p.get("type", "") for p in B)
+    cb = Counter(p.get("type", "") for pod B)
     with open("summary.txt", "w") as f:
-        f.write("# free-node-bot v3\n# %s\n" % time.strftime("%Y-%m-%d %H:%M"))
+        f.write("# free-node-bot v4\n# %s\n" % time.strftime("%Y-%m-%d %H:%M"))
         f.write("# fetched: %d  dedup: %d  alive: %d\n\n" % (len(all_ps), len(uniq), len(alive)))
         for i, (p, ms) in enumerate(zip(alive, delays)):
             mark = "\u2713" if ms > 0 else "\u2717"
