@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-import yaml, socket, json, base64, re, time, sys
+"""
+free-node-bot v3
+15 subs -> 4 output:
+  sub_a.yaml  — http+socks5 (Clash)
+  sub_b.yaml  — ss/vmess/vless/trojan/hy2 (Clash)
+  sub_a.txt   — http+socks5 (裸URL)
+  sub_b.txt   — ss/vmess/vless/trojan/hy2 (裸URL)
+"""
+import yaml, socket, json, base64, re, time
 import urllib.request, urllib.error, urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from collections import Counter
@@ -97,16 +105,16 @@ def handshake(p):
             r = s.recv(4096)
             ok = b"HTTP/1." in r[:100]
         elif t == "socks5":
-            s.sendall(bytes([5,1,0]))
+            s.sendall(bytes([5, 1, 0]))
             r = s.recv(2)
-            ok = r == bytes([5,0])
+            ok = r == bytes([5, 0])
         else:
             s.sendall(bytes([0]))
             r = s.recv(32)
             ok = len(r) > 0
         s.close()
         return "ALIVE" if ok else "DEAD"
-    except:
+    except Exception:
         return "DEAD"
 
 def speed(p):
@@ -132,11 +140,11 @@ def speed(p):
         elif t == "http":
             pass
         elif t == "socks5":
-            s.sendall(bytes([5,1,0]))
+            s.sendall(bytes([5, 1, 0]))
             s.recv(2)
-            s.sendall(bytes([5,1,0]))
+            s.sendall(bytes([5, 1, 0]))
             s.recv(2)
-            s.sendall(bytes([5,1]) + bytes([0]) * 10)
+            s.sendall(bytes([5, 1]) + bytes([0]) * 10)
             r = s.recv(10)
             if r[1] != 0: return -1
         t0 = time.time()
@@ -148,7 +156,7 @@ def speed(p):
             buf += chunk
         s.close()
         return int((time.time() - t0) * 1000)
-    except:
+    except Exception:
         return -1
 
 def to_url(p):
@@ -158,7 +166,7 @@ def to_url(p):
     pwd = str(p.get("password", ""))
     uid = str(p.get("uuid", ""))
     if t == "ss":
-        return f"ss://{urllib.parse.quote(pwd, safe='')}@{srv}:{port}"
+        return "ss://%s@%s:%d" % (urllib.parse.quote(pwd, safe=""), srv, port)
     if t == "vmess":
         j = {"v": 2, "ps": str(p.get("name", ""))[:200], "add": srv,
               "port": port, "id": uid, "aid": p.get("aid", 0),
@@ -166,19 +174,103 @@ def to_url(p):
         return "vmless://" + base64.urlsafe_b64encode(json.dumps(j).encode()).decode()
     if t == "vless":
         q = []
-        if p.get("fingerprint"): q.append(f"fp={p['fingerprint']}")
+        if p.get("fingerprint"): q.append("fp=" + str(p["fingerprint"]))
         if p.get("tls"): q.append("security=tls")
         q.append("encryption=" + str(p.get("encryption", "none")))
-        return f"vless://{uid}@{srv}:{port}?" + "&".join(q)
+        return "vless://%s@%s:%d?%s" % (uid, srv, port, "&".join(q))
     if t == "trojan":
-        return f"trojan://{uid}@{srv}:{port}"
+        return "trojan://%s@%s:%d" % (uid, srv, port)
     if t in ("hysteria", "hysteria2", "ssr"):
-        return f"{t}://{pwd}@{srv}:{port}"
+        return "%s://%s@%s:%d" % (t, pwd, srv, port)
     if t == "http":
-        return f"http://{urllib.parse.quote(pwd, safe='')}@{srv}:{port}"
+        return "http://%s@%s:%d" % (urllib.parse.quote(pwd, safe=""), srv, port)
     if t == "socks5":
-        return f"socks5://{urllib.parse.quote(pwd, safe='')}@{srv}:{port}"
+        return "socks5://%s@%s:%d" % (urllib.parse.quote(pwd, safe=""), srv, port)
     return None
+
+def to_clash(p):
+    t = p.get("type", "")
+    name = str(p.get("name", str(p.get("server", "?"))))[:60]
+    entry = {"name": name, "server": p["server"], "port": int(p["port"])}
+    if t == "ss":
+        entry.update(type="ss", cipher="aes-256-gcm", password=p.get("password", ""))
+    elif t == "vmess":
+        entry.update(type="vmess", uuid=p.get("uuid", ""), alterId=p.get("aid", 0), security="auto")
+    elif t == "vless":
+        entry.update(type="vless", uuid=p.get("uuid", ""),
+                     security="tls" if p.get("tls") else "none",
+                     encryption=p.get("encryption", "none"))
+        if p.get("fingerprint"): entry["fingerprint"] = p["fingerprint"]
+    elif t == "trojan":
+        entry.update(type="trojan", password=p.get("uuid", ""))
+    elif t in ("hysteria", "hysteria2", "ssr"):
+        entry.update(type=t, password=p.get("password", ""))
+    elif t == "http":
+        entry.update(type="http", username="", password=p.get("password", ""))
+    elif t == "socks5":
+        entry.update(type="socks", username="", password=p.get("password", ""))
+    else:
+        return None
+    return entry
+
+def make_clash_yaml(ps):
+    proxies = []
+    for p in ps:
+        e = to_clash(p)
+        if e: proxies.append(e)
+    names = [p["name"] for p in proxies]
+    return {
+        "proxies": proxies,
+        "proxy-groups": [
+            {"name": "auto", "type": "url-test", "servers": names,
+             "url": "http://cp.cloudflare.com/generate_100k",
+             "interval": 300, "tolerance": 50},
+            {"name": "manual", "type": "select", "servers": ["auto"] + names},
+        ],
+        "rules": [
+            {"type": "ip-cidr", "payload": "127.0.0.0/8", "proxy": "DIRECT"},
+            {"type": "ip-cidr", "payload": "10.0.0.0/8", "proxy": "DIRECT"},
+            {"type": "ip-cidr", "payload": "172.16.0.0/12", "proxy": "DIRECT"},
+            {"type": "ip-cidr", "payload": "192.168.0.0/16", "proxy": "DIRECT"},
+            {"type": "domain", "payload": "*.google.com", "proxy": "auto"},
+            {"type": "domain", "payload": "*.googleapis.com", "proxy": "auto"},
+            {"type": "domain", "payload": "*.gstatic.com", "proxy": "auto"},
+            {"type": "domain", "payload": "*.cloudflare.com", "proxy": "auto"},
+            {"type": "domain", "payload": "*.cloudflarestorage.com", "proxy": "auto"},
+            {"type": "domain", "payload": "*.github.com", "proxy": "auto"},
+            {"type": "domain", "payload": "*.githubassets.com", "proxy": "auto"},
+            {"type": "domain", "payload": "*.githubusercontent.com", "proxy": "auto"},
+            {"type": "domain", "payload": "*.openai.com", "proxy": "auto"},
+            {"type": "domain", "payload": "chatgpt.com", "proxy": "auto"},
+            {"type": "domain", "payload": "claude.ai", "proxy": "auto"},
+            {"type": "domain", "payload": "*.anthropic.com", "proxy": "auto"},
+            {"type": "domain", "payload": "cdn.jsdelivr.net", "proxy": "auto"},
+            {"type": "domain", "payload": "*.jsdelivr.net", "proxy": "auto"},
+            {"type": "domain", "payload": "*.jsdelivr.com", "proxy": "auto"},
+            {"type": "domain", "payload": "*.unpkg.com", "proxy": "auto"},
+            {"type": "domain", "payload": "*.npmjs.com", "proxy": "auto"},
+            {"type": "domain", "payload": "*.npmjs.org", "proxy": "auto"},
+            {"type": "domain", "payload": "*.netlify.app", "proxy": "auto"},
+            {"type": "domain", "payload": "*.vercel-dns.com", "proxy": "auto"},
+            {"type": "domain", "payload": "*.s3.amazonaws.com", "proxy": "auto"},
+            {"type": "domain", "payload": "*.cloudfront.net", "proxy": "auto"},
+            {"type": "domain", "payload": "*.akamaized.net", "proxy": "auto"},
+            {"type": "domain", "payload": "*.azureedge.net", "proxy": "auto"},
+            {"type": "domain", "payload": "*.baidu.com", "proxy": "auto"},
+            {"type": "domain", "payload": "*.bdimg.com", "proxy": "auto"},
+            {"type": "domain", "payload": "*.qq.com", "proxy": "auto"},
+            {"type": "domain", "payload": "*.qcloud.com", "proxy": "auto"},
+            {"type": "domain", "payload": "*.gtimg.cn", "proxy": "auto"},
+            {"type": "domain", "payload": "*.taobao.com", "proxy": "auto"},
+            {"type": "domain", "payload": "*.jd.com", "proxy": "auto"},
+            {"type": "domain", "payload": "*.weibo.com", "proxy": "auto"},
+            {"type": "domain", "payload": "*.sina.com.cn", "proxy": "auto"},
+            {"type": "domain", "payload": "*.163.com", "proxy": "auto"},
+            {"type": "domain", "payload": "*.126.com", "proxy": "auto"},
+            {"type": "domain", "payload": "*.ctrip.com", "proxy": "auto"},
+            {"type": "match", "payload": "", "proxy": "auto"},
+        ],
+    }
 
 def main():
     all_ps = []
@@ -190,48 +282,67 @@ def main():
         else:
             ps = parse_b64(raw)
         all_ps.extend(ps)
+
     seen, uniq = set(), []
     for p in all_ps:
         k = (str(p.get("server", "")), str(p.get("port", "")))
         if k not in seen:
             seen.add(k)
             uniq.append(p)
+
     with ThreadPoolExecutor(max_workers=30) as ex:
         res = list(ex.map(handshake, uniq))
     alive = [p for p, r in zip(uniq, res) if r == "ALIVE"]
+
     with ThreadPoolExecutor(max_workers=20) as ex:
         delays = list(ex.map(speed, alive))
+
     A = [p for p in alive if p.get("type") in ("http", "socks5")]
     B = [p for p in alive if p.get("type") not in ("http", "socks5")]
-    def dump(fn, ps, delays, label):
+
+    def dump_txt(fn, ps, label):
         with open(fn, "w") as f:
-            f.write(f"# {label}\n# {time.strftime('%Y-%m-%d %H:%M')}\n# {len(ps)}/{len(uniq)} alive\n\n")
-            for p, ms in zip(ps, delays):
+            f.write("# %s\n# %s\n# %d/%d alive\n\n" % (label, time.strftime("%Y-%m-%d %H:%M"), len(ps), len(uniq)))
+            for p, ms in zip(ps, [d for a, d in zip(alive, delays) if id(a) == id(p)]):
                 u = to_url(p)
                 if u: f.write(u + "\n")
+
+    def dump_clash(fn, ps):
+        data = make_clash_yaml(ps)
+        with open(fn, "w") as f:
+            yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
+
     idsA = {id(p) for p in A}
     idsB = {id(p) for p in B}
-    del_a = [d for p, d in zip(alive, delays) if id(p) in idsA]
-    del_b = [d for p, d in zip(alive, delays) if id(p) in idsB]
-    dump("sub_a.txt", A, del_a, "A: http+socks5")
-    dump("sub_b.txt", B, del_b, "B: ss/vmess/vless/trojan/hy2")
+    delA = [d for p, d in zip(alive, delays) if id(p) in idsA]
+    delB = [d for p, d in zip(alive, delays) if id(p) in idsB]
+
+    dump_txt("sub_a.txt", A, "A: http+socks5")
+    dump_txt("sub_b.txt", B, "B: ss/vmess/vless/trojan/hy2")
+    dump_clash("sub_a.yaml", A)
+    dump_clash("sub_b.yaml", B)
+
     ca = Counter(p.get("type", "") for p in A)
     cb = Counter(p.get("type", "") for p in B)
     with open("summary.txt", "w") as f:
-        f.write(f"# free-node-bot summary\n# {time.strftime('%Y-%m-%d %H:%M')}\n")
-        f.write(f"# fetched: {len(all_ps)}  dedup: {len(uniq)}  alive: {len(alive)}\n\n")
+        f.write("# free-node-bot v3\n# %s\n" % time.strftime("%Y-%m-%d %H:%M"))
+        f.write("# fetched: %d  dedup: %d  alive: %d\n\n" % (len(all_ps), len(uniq), len(alive)))
         for i, (p, ms) in enumerate(zip(alive, delays)):
             mark = "\u2713" if ms > 0 else "\u2717"
-            ms_s = f"{ms}ms" if ms > 0 else "--"
-            f.write(f"{mark} {str(p.get('name', '?'))[:50]}  [{p.get('type','')}]  {p.get('server','')}:{p.get('port','')}  {ms_s}\n")
-    print(f"15 subs")
-    print(f"  fetched: {len(all_ps)}")
-    print(f"  dedup:   {len(uniq)}")
-    print(f"  ALIVE:   {len(alive)}")
-    print(f"\n  A: {len(A)}")
-    for t, c in ca.most_common(): print(f"    {t}: {c}")
-    print(f"\n  B: {len(B)}")
-    for t, c in cb.most_common(): print(f"    {t}: {c}")
+            ms_s = "%dms" % ms if ms > 0 else "--"
+            f.write("%s %s  [%s]  %s:%s  %s\n" % (
+                mark, str(p.get("name", "?"))[:50],
+                p.get("type", ""),
+                p.get("server", ""), p.get("port", ""), ms_s))
+
+    print("15 subs")
+    print("  fetched: %d" % len(all_ps))
+    print("  dedup:   %d" % len(uniq))
+    print("  ALIVE:   %d" % len(alive))
+    print("\n  A: %d" % len(A))
+    for t, c in ca.most_common(): print("    %s: %d" % (t, c))
+    print("\n  B: %d" % len(B))
+    for t, c in cb.most_common(): print("    %s: %d" % (t, c))
 
 if __name__ == "__main__":
     main()
