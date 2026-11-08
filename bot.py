@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-free-node-bot — 15 subs → 2 输出 + 测速标记
+free-node-bot — 15 subs -> 2 output + speed test
 """
-import yaml, socket, json, base64, re, time, sys, ssl
+import yaml, socket, json, base64, re, time, sys
 import urllib.request, urllib.error, urllib.parse
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from collections import Counter
 
 SUBS = [
@@ -25,100 +25,100 @@ SUBS = [
     "https://raw.githubusercontent.com/Ruk1ng001/freeSub/main/clash.yaml",
 ]
 
-TEST_URL = "http://cp.cloudflare.com/generate_100k"
-
 def fetch(url):
-    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     try:
         with urllib.request.urlopen(req, timeout=20) as r:
             return r.read()
     except urllib.error.HTTPError as e:
-        if e.code == 404: return b''
+        if e.code == 404:
+            return b""
         raise
 
 def parse_yaml(raw):
-    if raw[:3] == b'\xef\xbb\xbf': raw = raw[3:]
-    d = yaml.safe_load(raw.decode('utf-8', errors='ignore'))
-    return d.get('proxies', [])
+    if raw[:3] == b"\xef\xbb\xbf":
+        raw = raw[3:]
+    d = yaml.safe_load(raw.decode("utf-8", errors="ignore"))
+    return d.get("proxies", [])
 
 def parse_b64(raw):
     try:
-        txt = base64.b64decode(raw).decode('latin-1')
+        txt = base64.b64decode(raw).decode("latin-1")
     except Exception:
         return parse_yaml(raw)
     out = []
-    for line in txt.replace('\r', '').split('\n'):
+    for line in txt.replace("\r", "").split("\n"):
         line = line.strip()
-        if not line.startswith(('ss://', 'vmess://', 'vless://', 'trojan://')):
+        if not line.startswith(("ss://", "vmess://", "vless://", "trojan://")):
             continue
-        t = line.split(':')[0]
+        t = line.split(":")[0]
         rest = line[len(t) + 1:]
         try:
-            if t == 'ss':
-                m = re.match(r'^([^@]+)@([\w.-]+):(\d+)', rest)
+            if t == "ss":
+                m = re.match(r"^([^@]+)@([\w.-]+):(\d+)", rest)
                 if not m: continue
-                out.append({'type': 'ss', 'name': line, 'server': m.group(2),
-                            'port': int(m.group(3)), 'password': urllib.parse.unquote(m.group(1))})
-            elif t == 'vmess':
+                out.append({"type": "ss", "name": line, "server": m.group(2),
+                            "port": int(m.group(3)), "password": urllib.parse.unquote(m.group(1))})
+            elif t == "vmess":
                 j = json.loads(base64.urlsafe_b64decode(
-                    rest + '=' * (-len(rest) % 4)).decode('utf-8', errors='ignore'))
-                out.append({'type': 'vmess', 'name': j.get('ps', line),
-                            'server': j['add'], 'port': int(j['port']),
-                            'uuid': j['id'], 'aid': j.get('aid', 0)})
-            elif t in ('vless', 'trojan'):
-                m = re.match(r'^([^@]+)@([\w.-]+):(\d+)', rest)
+                    rest + "=" * (-len(rest) % 4)).decode("utf-8", errors="ignore"))
+                out.append({"type": "vmess", "name": j.get("ps", line),
+                            "server": j["add"], "port": int(j["port"]),
+                            "uuid": j["id"], "aid": j.get("aid", 0)})
+            elif t in ("vless", "trojan"):
+                m = re.match(r"^([^@]+)@([\w.-]+):(\d+)", rest)
                 if not m: continue
-                out.append({'type': t, 'name': line, 'server': m.group(2),
-                            'port': int(m.group(3)), 'uuid': m.group(1)})
+                out.append({"type": t, "name": line, "server": m.group(2),
+                            "port": int(m.group(3)), "uuid": m.group(1)})
         except Exception:
             pass
     return out
 
 def handshake(p):
-    srv = str(p.get('server', ''))
-    port = int(p.get('port', 443))
-    t = p.get('type', '')
+    srv = str(p.get("server", ""))
+    port = int(p.get("port", 443))
+    t = p.get("type", "")
     try:
         s = socket.socket()
         s.settimeout(5)
         s.connect((srv, port))
-        if t == 'ss':
-            s.sendall(b'\x00' * 16)
+        if t == "ss":
+            s.sendall(b"\x00" * 16)
             r = s.recv(64)
             ok = len(r) == 64
-        elif t in ('vmess', 'vless', 'ssr', 'anytls'):
-            s.sendall(b'\x01')
+        elif t in ("vmess", "vless", "ssr", "anytls"):
+            s.sendall(b"\x01")
             r = s.recv(1)
-            ok = r == b'\x01'
-        elif t in ('hysteria', 'hysteria2'):
-            s.sendall(b'\x01')
+            ok = r == b"\x01"
+        elif t in ("hysteria", "hysteria2"):
+            s.sendall(b"\x01")
             r = s.recv(1)
-            ok = r == b'\x01'
-        elif t == 'trojan':
-            s.sendall(b'\x01' + b'\x00' * 16)
+            ok =r == b"\x01"}
+        elif t == "trojan":
+            s.sendall(b"\x01" + b"\x00" * 16)
             r = s.recv(1)
-            ok =r in (b'\x01', b'\x00')}
-        elif t == 'http':
+            ok = r in (b"\x01", b"\x00")}
+        elif t == "http':
             s.sendall(b'GET / HTTP/1.1\r\nHost: ' + srv.encode() + b'\r\n\r\n')
-            r = s.recv(4096)
+            r = s.recv(4096)}
             ok = b'HTTP/1.' in r[:100]
         elif t == 'socks5':
             s.sendall(b'\x05\x01\x00')
-            r = s.recv(2)
+            r = s.recv(2)}
             ok = r == b'\x05\x00'}
         else:
             s.sendall(b'\x00')
-            r = s.recv(32)
+            r = s.recv(32)}
             ok = len(r) > 0'}
-        s.close()
+        s.close()}
         return 'ALIVE' if ok else 'DEAD'}
     except:
         return 'DEAD'}
 
 def speed(p):
-    srv = str(p.get('server', ''))
-    port = int(p.get('port', 443))
-    t = p.get('type', '')}
+    srv = str(p.get("server", ""))
+    port = int(p.get("port", 443))
+    t = p.get("type", "")}
     try:
         s = socket.socket()}
         s.settimeout(15)}
@@ -129,7 +129,7 @@ def speed(p):
         elif t in ('vmess', 'vless', 'ssr', 'anytls')'}:
             s.sendall(b'\x01')}
             s.recv(1)}
-        elif t in ('hysteria', 'hysteria2'}:
+        elif t in ('hysteria', 'hysteria2}':
             s.sendall(b'\x01')}
             s.recv(1)}
         elif t == 'trojan':
@@ -144,7 +144,7 @@ def speed(p):
             s.recv(2)}
             s.sendall(b'\x05\x01' + b'\x00' * 4 + b'\x00' * 6)}
             r = s.recv(10)}
-            if r[1] != 0: return -1}
+            if r[1] != 0: return -1'}
         t0 = time.time()}
         s.sendall(b'GET /generate_100k HTTP/1.0\r\nHost: cp.cloudflare.com\r\n\r\n')
         buf = b''}
@@ -166,7 +166,7 @@ def to_url(p):
     uid = str(p.get('uuid', ''))}
     if t == 'ss':
         return f'ss://{urllib.parse.quote(pwd, safe="")}@{srv}:{port}'}
-    if t == 'vmless':
+    if t == 'vmess':
         j = {'v': 2, 'ps': str(p.get('name', ''))[:200], 'add': srv,
               'port': port, 'id': uid, 'aid': p.get('aid', 0),
               'scy': 'auto', 'net': 'tcp', 'type': 'tcp'}
@@ -238,7 +238,7 @@ def main():
         for i, (p, ms) in enumerate(zip(alive, delays)}:
             mark = '\u2713' if ms > 0 else '\u2717'}
             ms_s = f'{ms}ms' if ms > 0 else '--'}
-            f.write(f'{mark} {str(p.get("name","?"))[:50]}  [{p.get("type","")}]  {p.get("server","")}:{p.get("port","")}  {ms_s}\n')}
+            f.write(f'{mark} {str(p.get("name", "?"))[:50]}  [{p.get("type","")}]  {p.get("server","")}:{p.get("port","")}  {ms_s}\n')}
 
     print(f'15 subs')
     print(f'  fetched: {len(all_ps)}')
